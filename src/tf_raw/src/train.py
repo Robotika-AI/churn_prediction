@@ -54,22 +54,21 @@ def f1_score(y_true, y_pred):
 
     return 2.0 * ((precision * recall) / (precision + recall + K.epsilon()))
 
-def data_size_tests(tuner, best_hp, df):
+def data_size_tests(tuner, best_hp, train_df, val_df):
     performance_arr = []
     num_steps = 10
     for i in range(1, num_steps + 1):
         my_dict = {}
-        size_df = round(len(df) * i / num_steps)
         my_dict['size'] = i / num_steps
-        df_part = df.sample(n=size_df, random_state=seed)
-        train_ds_pd_part, val_ds_pd_part, test_ds_pd_part = split_dataset(df_part)
-        train_ds_part = tfdf.keras.pd_dataframe_to_tf_dataset(train_ds_pd_part, label=label)
-        val_ds_part   = tfdf.keras.pd_dataframe_to_tf_dataset(val_ds_pd_part,   label=label)
+        df_train_part = train_df[0:(round)(len(train_df)* i /num_steps)]
+        df_val_part   = val_df[0:(round)(len(train_df)* i /num_steps)]
+        train_ds_part = tfdf.keras.pd_dataframe_to_tf_dataset(df_train_part, label=label)
+        val_ds_part   = tfdf.keras.pd_dataframe_to_tf_dataset(df_val_part,   label=label)
         model = tuner.hypermodel.build(best_hp)
         model.compile(metrics=[f1_score])
-        model.fit(train_ds_part)
-        my_dict['train_f1'] = model.evaluate(x = train_ds_part)[1]
-        my_dict['val_f1']   = model.evaluate(x = val_ds_part)[1]
+        model.fit(x = train_ds_part)
+        my_dict['train_f1']  = model.evaluate(x = train_ds_part)[1]
+        my_dict['val_f1']    = model.evaluate(x = val_ds_part)[1]
         performance_arr.append(my_dict)
     return performance_arr
 
@@ -89,20 +88,6 @@ def create_rf_model(hp):
     model.compile(metrics = [f1_score])
     return model
 
-def evaluate(tuner_rf, best_hp,path):
-    model = tuner_rf.hypermodel.build(best_hp)
-    model.compile(metrics=[f1_score])
-    model.fit(train_ds)
-    f1_score_test = model.evaluate(x=test_ds)[1]
-    f1_score_train = model.evaluate(x=train_ds)[1]
-    f1_score_val = model.evaluate(x=val_ds)[1]
-
-    print("F1 score for the Random Forest model ,train,val,test : ", f1_score_train, f1_score_val, f1_score_test)
-    with open(path, 'w') as file:
-        writer = csv.writer(file)
-        writer.writerow([f1_score_train])
-    return True
-
 def create_bt_model(hp):
     model = tfdf.keras.GradientBoostedTreesModel(
         num_trees=hp.Int('num_trees', min_value=10, max_value=500, step=20),
@@ -113,6 +98,19 @@ def create_bt_model(hp):
     model.compile(metrics = [f1_score])
     return model
 
+def evaluate(tuner_rf, best_hp, path):
+    model = tuner_rf.hypermodel.build(best_hp)
+    model.compile(metrics=[f1_score])
+    model.fit(train_ds)
+    f1_score_test = model.evaluate(x=test_ds)[1]
+    f1_score_train = model.evaluate(x=train_ds)[1]
+    f1_score_val = model.evaluate(x=val_ds)[1]
+
+    print("F1 score for the Random Forest model ,train,val,test : ", f1_score_train, f1_score_val, f1_score_test)
+    with open(path, 'w') as file:
+        writer = csv.writer(file)
+        writer.writerow(["train", "val", "test", f1_score_train, f1_score_val, f1_score_test])
+    return True
 
 path_filename = "../data/data.csv"
 df  = pd.read_csv(path_filename)
@@ -171,11 +169,11 @@ tuner_rf.search(x                 = train_ds,
                 )
 
 best_hp = tuner_rf.get_best_hyperparameters()[0]
-perf_arr = data_size_tests(tuner_rf, best_hp, df)
-
+perf_arr = data_size_tests(tuner_rf, best_hp, train_ds_pd, val_ds_pd)
+print("\n\n\n\nBest hp :",best_hp)
 create_report(perf_arr, "reports/random_forest.png", "Random Forest Algorithm")
 evaluate(tuner_rf, best_hp,os.path.join(project_name,'test_results.csv') )
-"""
+
 
 #
 # GradientBoostedTrees model
@@ -197,7 +195,8 @@ tuner_bt.search(x         = train_ds,
                 )
 
 best_hp = tuner_bt.get_best_hyperparameters()[0]
-perf_arr = data_size_tests(tuner_bt, best_hp,df)
+perf_arr = data_size_tests(tuner_bt, best_hp,train_ds_pd, val_ds_pd)
+print("\n\n\n\nBest hp :",best_hp)
 
 create_report(perf_arr, "reports/gradien_boosting.png", "Gradient Boosted Trees Algorithm")
 evaluate(tuner_bt, best_hp,os.path.join(project_name,'test_results.csv') )
